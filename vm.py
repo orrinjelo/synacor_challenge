@@ -158,9 +158,9 @@ class VirtualMachine(object):
     def memset(self, addr, val):
         if 32768 <= addr <= 32775:
             reg = addr - 32768
-            self.__registers[reg] = val
+            self.__registers[reg] = val % 32768
         else:
-            self.__memory[addr] = val 
+            self.__memory[addr] = val % 32768
 
     def memget(self, addr):
         if 32768 <= addr <= 32775:
@@ -376,7 +376,9 @@ class VirtualMachine(object):
 
     def out(self):
         self.check_instruction(19)
-        ch = self.mem[self.pc]
+        ch = self.memget(self.pc)
+        if ch >= 0x8000:
+            ch = self.memget(ch)
         self.__pc += 1
 
         print(chr(ch), end='')
