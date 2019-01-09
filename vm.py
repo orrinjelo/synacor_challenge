@@ -8,6 +8,7 @@ import logging
 from signal import signal, SIGINT
 import getch
 from utils.spiffyText import spiff
+import re
 
 log = logging.getLogger()
 
@@ -43,19 +44,24 @@ class VirtualMachine(object):
     - Encountering a register as an operation argument should be taken as reading
        from the register or setting into the register as appropriate.    
     '''
-    def __init__(self, memsize=65536, n_registers=8):
+    def __init__(self, state_file=None, memsize=65536, n_registers=8):
         '''
         Args:
             memsize: size of mem (defaults to 66536)
             n_registers: number of registers (defaults to 8)
         '''
-        self.__memory = np.zeros((memsize,), dtype=np.uint16)
-        self.__registers = np.zeros((n_registers,), dtype=np.uint16)
-        self.__stack = []
+        if state_file is None:
+            self.__memory = np.zeros((memsize,), dtype=np.uint16)
+            self.__registers = np.zeros((n_registers,), dtype=np.uint16)
+            self.__stack = []
 
-        self.__pc = 0   # Program Counter
+            self.__pc = 0   # Program Counter
 
-        self._running = False
+            self._running = False
+
+            self.__buffer = ''
+        else:
+            self.load_state(state_file)
 
         self.opcodes = {
             0:  self.halt,
@@ -132,6 +138,11 @@ class VirtualMachine(object):
             21: 0,
         }
 
+        self.commands = {
+            'save': self.save_state,
+            'load': self.load_state,
+        }
+
     def reset(self):
         self.__pc = 0
         self.__memory[:] = 0
@@ -187,12 +198,11 @@ class VirtualMachine(object):
             with open(file, 'rb') as f:
                 bytes_read = f.read()
                 self.load(bytes_read)
+            self._running = True
         elif bytestr is not None:
             self.load(bytestr)
-        else:
-            log.error('run() called, but no arguments')
-            return
-        self._running = True
+            self._running = True
+
         self.execute()
 
     def load(self, exstr):
@@ -387,21 +397,65 @@ class VirtualMachine(object):
         self.check_instruction(20)
         a = self.extract()
         
-        c = ' '
-        while True:
-            c = getch.getche()
-            if c == '\n':
-                break
-            self.memset(a, ord(c))
+        ready = False
+        if self.__buffer == '':
+            while not ready:
+                self.__buffer = input() + '\n'
+                if self.__buffer[0] == '!':
+                    ex = re.compile(r'!([a-z]*)\s(.*)')
+                    r = ex.match(self.__buffer)
+                    try:
+                        self.commands[r.group(1)](r.group(2))
+                    except Exception as e:
+                        print(f'Invalid command. ({e})')
+                    self.__buffer = ''
+                else:
+                    ready = True
+        
+        self.__buffer, c = self.__buffer[1:], self.__buffer[0]
+
+        self.memset(a, ord(c))
 
     def noop(self):
         self.__pc += 1
 
+    def save_state(self, a=''):
+        import json
+        def intify(x):
+            return [int(y) for y in x]
+        data = {
+            'mem': intify(self.__memory.tolist()),
+            'reg': intify(self.__registers.tolist()),
+            'stack': intify(self.__stack),
+            'pc': int(self.__pc),
+            'running': self._running,
+            'buf': self.__buffer
+        }
+        if a == '':
+            a = 'default.dat'
+        with open(a, 'w') as f:
+            json.dump(data, f)
+            print(f'State saved to {a}')
+
+    def load_state(self, a=''):
+        import json
+        if a == '':
+            a = 'default.dat'
+        with open(a, 'r') as f:
+            data = json.load(f)
+            print(f'State loaded from {a}')
+
+            self.__memory = np.array(data['mem'], dtype=np.uint16)
+            self.__registers = np.array(data['reg'], dtype=np.uint16)
+            self.__stack = data['stack']
+            self.__pc = data['pc']
+            self._running = data['running']
+            self.__buffer = data['buf']
 
 def run(args):
-    vm = VirtualMachine()
+    vm = VirtualMachine(state_file=args.load)
     vm.run(file=args.file)
-    print(vm.registers)
+    # print(vm.registers)
 
 class Tests:
 
@@ -690,6 +744,9 @@ def main():
     parser.add_argument('-f', '--file',
                         default=None,
                         help='input file of binary to execute')
+    parser.add_argument('-L', '--load',
+                        default=None,
+                        help='load a save state')
 
     (args, extra) = parser.parse_known_args(sys.argv)
 
