@@ -9,14 +9,10 @@ from signal import signal, SIGINT
 import getch
 from utils.spiffyText import spiff
 import re
+from collections import deque
 
 log = logging.getLogger()
 
-# class OpcodeError(Exception):
-#     def __init__(self, op):
-#         self.op = op
-#     def __str__(self):
-#         return f'Failed op code: {self.op}'
 
 class VirtualMachine(object):
     '''
@@ -54,7 +50,7 @@ class VirtualMachine(object):
         if state_file is None:
             self.__memory = np.zeros((memsize,), dtype=np.uint16)
             self.__registers = np.zeros((n_registers,), dtype=np.uint16)
-            self.__stack = []
+            self.__stack = deque([])
 
             self.__pc = 0   # Program Counter
 
@@ -151,6 +147,10 @@ class VirtualMachine(object):
             'cmem': self.print_cmem,
             'pc': self.print_pc,
             'setpc': self.set_pc,
+            'pinmem': self.pin_mem,
+            'diffmem': self.diff_mem,
+            'setmem': self.setmem,
+            'setreg': self.setreg,
             'help': self.helpme
         }
 
@@ -472,7 +472,7 @@ class VirtualMachine(object):
 
             self.__memory = np.array(data['mem'], dtype=np.uint16)
             self.__registers = np.array(data['reg'], dtype=np.uint16)
-            self.__stack = data['stack']
+            self.__stack = deque(data['stack'])
             self.__pc = data['pc']
             self._running = data['running']
             self.__buffer = data['buf'] + 'look\n'
@@ -490,6 +490,41 @@ class VirtualMachine(object):
         with open(a, 'wb') as f:
             f.write(self.mem.tobytes())
             print('Dumped memory.')
+
+    def setmem(self, args):
+        a, b = args.group(2).split(' ')
+
+        if '0x' in a:
+            a = int(a, 0)
+        else:
+            a = int(a)
+
+        if '0x' in b:
+            b = int(b, 0)
+        else:
+            b = int(b)
+
+        self.__memory[a] = b
+        print(f'Memory location {a} set to {b} ({chr(b)}).')
+
+    def setreg(self, args):
+        a, b = args.group(2).split(' ')
+
+        a = int(a)
+
+        if '0x' in b:
+            b = int(b, 0)
+        else:
+            b = int(b)
+
+        self.__registers[a] = b
+        print(f'Register {a} set to {b} ({hex(b)})')
+
+    def conjure(self, args):
+        item = args.group(2)
+        if item == 'lantern':
+            self.__memory[2678] = 2377
+            print('A lantern has been conjured!')
 
     def print_regs(self, args):
         print(self.registers)
@@ -524,6 +559,34 @@ class VirtualMachine(object):
             if c == w:
                 c = 0
                 print()
+
+    def pin_mem(self, args):
+        self.__pinmem = np.copy(self.mem)
+        print("Memory pinned.");
+
+    def diff_mem(self, args):
+        try:
+            mem = self.__pinmem
+        except:
+            print('Please pin memory first (!pinmem)')
+
+        if args.group(2) == 'c':
+            c = 'c'
+        elif args.group(2) == 'h':
+            c = 'h'
+        else:
+            c = None
+
+        print('Args: ', args.group(2))
+
+        for i in range(self.__memory.shape[0]):
+            if mem[i] != self.__memory[i]:
+                if c == 'c':
+                    print(f'   {i:5} {chr(mem[i]):5} {chr(self.__memory[i]):5}')
+                elif c == 'h':
+                    print(f'   {i:5} {hex(mem[i]):5} {hex(self.__memory[i]):5}')
+                else:
+                    print(f'   {i:5} {mem[i]:5} {self.__memory[i]:5}')
 
     def print_pc(self, args):
         print(self.pc)
