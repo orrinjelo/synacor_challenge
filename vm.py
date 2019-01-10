@@ -47,6 +47,7 @@ class VirtualMachine(object):
     def __init__(self, state_file=None, memsize=65536, n_registers=8):
         '''
         Args:
+            state_file: file path to a saved state
             memsize: size of mem (defaults to 66536)
             n_registers: number of registers (defaults to 8)
         '''
@@ -141,6 +142,16 @@ class VirtualMachine(object):
         self.commands = {
             'save': self.save_state,
             'load': self.load_state,
+            'quit': self.quit,
+            'prev': self.prev_state,
+            'memdump': self.memdump,
+            'reg': self.print_regs,
+            'stack': self.print_stack,
+            'mem': self.print_mem,
+            'cmem': self.print_cmem,
+            'pc': self.print_pc,
+            'setpc': self.set_pc,
+            'help': self.helpme
         }
 
     def reset(self):
@@ -219,7 +230,7 @@ class VirtualMachine(object):
             try:
                 pc = self.pc
                 mem = self.mem[pc]
-                log.vomit(f'pc:{pc:5} {self.opstr[mem]:6} {str(self.mem[pc+1:pc+self.opargs[mem]+1]):25} {self.registers}')
+                log.vomit(f'pc:{pc:5} {self.opstr[mem]:6} {str(self.mem[pc+1:pc+self.opargs[mem]+1]):25} r={self.registers} s={self.stack}')
                 self.opcodes[mem]()
             except KeyError as e:
                 log.error(f'Failed instruction [{mem}@{pc}]: {e}')
@@ -400,17 +411,20 @@ class VirtualMachine(object):
         ready = False
         if self.__buffer == '':
             while not ready:
+                if not self._running:
+                    return
                 self.__buffer = input() + '\n'
                 if self.__buffer[0] == '!':
                     ex = re.compile(r'!([a-z]*)\s(.*)')
                     r = ex.match(self.__buffer)
                     try:
-                        self.commands[r.group(1)](r.group(2))
+                        self.commands[r.group(1)](r)
                     except Exception as e:
                         print(f'Invalid command. ({e})')
                     self.__buffer = ''
                 else:
                     ready = True
+            self.save_state('prev.dat')
         
         self.__buffer, c = self.__buffer[1:], self.__buffer[0]
 
@@ -419,7 +433,7 @@ class VirtualMachine(object):
     def noop(self):
         self.__pc += 1
 
-    def save_state(self, a=''):
+    def save_state(self, args):
         import json
         def intify(x):
             return [int(y) for y in x]
@@ -431,16 +445,27 @@ class VirtualMachine(object):
             'running': self._running,
             'buf': self.__buffer
         }
+        if type(args) == str:
+            a = args
+        else:
+            a = args.group(2)
         if a == '':
             a = 'default.dat'
+        a = os.path.join('.states',a)
         with open(a, 'w') as f:
             json.dump(data, f)
-            print(f'State saved to {a}')
+            if a != '.states/prev.dat':
+                print(f'State saved to {a}')
 
-    def load_state(self, a=''):
+    def load_state(self, args):
         import json
+        if type(args) == str:
+            a = args
+        else:
+            a = args.group(2)
         if a == '':
             a = 'default.dat'
+        a = os.path.join('.states',a)
         with open(a, 'r') as f:
             data = json.load(f)
             print(f'State loaded from {a}')
@@ -450,7 +475,66 @@ class VirtualMachine(object):
             self.__stack = data['stack']
             self.__pc = data['pc']
             self._running = data['running']
-            self.__buffer = data['buf']
+            self.__buffer = data['buf'] + 'look\n'
+
+    def prev_state(self, args):
+        self.load_state('prev.dat')
+
+    def quit(self, args):
+        self._running = False
+
+    def memdump(self, args):
+        a = args.group(2)
+        if a == '':
+            a = 'memdump.bin'
+        with open(a, 'wb') as f:
+            f.write(self.mem.tobytes())
+            print('Dumped memory.')
+
+    def print_regs(self, args):
+        print(self.registers)
+
+    def print_stack(self, args):
+        print(self.stack)
+
+    def helpme(self, args):
+        print('The following commands are available: ')
+        for k in self.commands.keys():
+            print(f' {k}')
+
+    def print_mem(self, args):
+        g = args.group(2).split(' ')
+        a, b = int(g[0]), int(g[1])
+        print(self.mem[a:b])
+
+    def print_cmem(self, args):
+        g = args.group(2).split(' ')
+        if '0x' in g[0]:
+            a, b = int(g[0], 0), int(g[1], 0)
+        else:
+            a, b = int(g[0]), int(g[1])
+        mem = self.mem[a:b]
+        c, w = 0, 16
+        for entry in mem:
+            if entry > 30:
+                print(f'   {chr(entry)} ', end='')
+            else:
+                print(f'{entry:4} ', end='')
+            c += 1
+            if c == w:
+                c = 0
+                print()
+
+    def print_pc(self, args):
+        print(self.pc)
+
+    def set_pc(self, args):
+        a = args.group(2)
+        if '0x' in a:
+            a = int(a, 0)
+        else:
+            a = int(a)
+        self.__pc = a
 
 def run(args):
     vm = VirtualMachine(state_file=args.load)
