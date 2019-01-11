@@ -15,9 +15,26 @@ from test.vmtest import Tests
 
 log = logging.getLogger()
 
+sigint_count = 0
+
+def sigint(vm):
+    global sigint_count
+    def _sigint(*args):
+        global sigint_count
+        log.debug('Got SIGINT')
+        vm.quit(None)
+        # sigint_count += 2
+        # if sigint_count == 2:
+        #     vm.quit(None)
+        # else:
+        #     print('Interrupted reality.  You get another choice:')
+        #     vm.get_input()
+        #     sigint_count = 0
+    return _sigint
 
 def run(args):
     vm = VirtualMachine(state_file=args.load)
+    signal(SIGINT, sigint(vm))
     vm.run(file=args.file)
     # print(vm.registers)
 

@@ -147,6 +147,8 @@ class VirtualMachine(object):
             'diffmem': self.diff_mem,
             'setmem': self.setmem,
             'setreg': self.setreg,
+            'conjure': self.conjure,
+            'tp': self.teleport,
             'help': self.helpme
         }
 
@@ -226,7 +228,7 @@ class VirtualMachine(object):
             try:
                 pc = self.pc
                 mem = self.mem[pc]
-                log.vomit(f'pc:{pc:5} {self.opstr[mem]:6} {str(self.mem[pc+1:pc+self.opargs[mem]+1]):25} r={self.registers} s={self.stack}')
+                log.vomit(f'pc:{pc:5} {self.opstr[mem]:6} {str(self.mem[pc+1:pc+self.opargs[mem]+1]):25} r={self.registers} s={list(self.stack)}')
                 self.opcodes[mem]()
             except KeyError as e:
                 log.error(f'Failed instruction [{mem}@{pc}]: {e}')
@@ -234,8 +236,10 @@ class VirtualMachine(object):
         log.debug('VM has terminated.')
 
     def check_instruction(self, n):
-        assert(self.mem[self.pc] == n)
-        self.__pc += 1
+        if self.mem[self.pc] != n:
+            log.warning('Instruction mismatch')
+        else:
+            self.__pc += 1
 
     def extract(self):
         a = self.mem[self.pc]
@@ -404,22 +408,10 @@ class VirtualMachine(object):
         self.check_instruction(20)
         a = self.extract()
         
-        ready = False
+        self.ready = False
         if self.__buffer == '':
-            while not ready:
-                if not self._running:
-                    return
-                self.__buffer = input() + '\n'
-                if self.__buffer[0] == '!':
-                    ex = re.compile(r'!([a-z]*)\s(.*)')
-                    r = ex.match(self.__buffer)
-                    try:
-                        self.commands[r.group(1)](r)
-                    except Exception as e:
-                        print(f'Invalid command. ({e})')
-                    self.__buffer = ''
-                else:
-                    ready = True
+            while not self.ready:
+                self.get_input()
             self.save_state('prev.dat')
         
         self.__buffer, c = self.__buffer[1:], self.__buffer[0]
@@ -428,6 +420,21 @@ class VirtualMachine(object):
 
     def noop(self):
         self.__pc += 1
+
+    def get_input(self):
+        if not self._running:
+            return
+        self.__buffer = input() + '\n'
+        if self.__buffer[0] == '!':
+            ex = re.compile(r'!([a-z]*)\s(.*)')
+            r = ex.match(self.__buffer)
+            try:
+                self.commands[r.group(1)](r)
+            except Exception as e:
+                print(f'Invalid command. ({e})')
+            self.__buffer = ''
+        else:
+            self.ready = True
 
     def save_state(self, args):
         import json
@@ -521,6 +528,13 @@ class VirtualMachine(object):
         if item == 'lantern':
             self.__memory[2678] = 2377
             print('A lantern has been conjured!')
+
+    def teleport(self, args):
+        item = args.group(2)
+        if item == 'beach':
+            self.__memory[2732] = 0x9c2
+            self.__memory[2733] = 0x9c2
+            print('You\'ve been teleported to a beach!')
 
     def print_regs(self, args):
         print(self.registers)
