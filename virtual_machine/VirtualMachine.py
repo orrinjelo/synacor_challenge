@@ -149,6 +149,7 @@ class VirtualMachine(object):
             'setreg': self.setreg,
             'conjure': self.conjure,
             'tp': self.teleport,
+            'asm': self.export_asm,
             'help': self.helpme
         }
 
@@ -549,8 +550,19 @@ class VirtualMachine(object):
 
     def print_mem(self, args):
         g = args.group(2).split(' ')
-        a, b = int(g[0]), int(g[1])
-        print(self.mem[a:b])
+        if '0x' in g[0]:
+            a = int(g[0], 0)
+        else:
+            a = int(g[0])
+        if len(g) == 2:
+            if '0x' in g[1]:
+                b = int(g[1], 0)
+            else:
+                b = int(g[1])
+            print(self.mem[a:b])
+        else:
+            print(self.mem[a])
+
 
     def print_cmem(self, args):
         g = args.group(2).split(' ')
@@ -569,6 +581,41 @@ class VirtualMachine(object):
             if c == w:
                 c = 0
                 print()
+
+    def export_asm(self, args):
+        g = args.group(2)
+        stripped = True
+        if g == 'all':
+            stripped = False
+            g = None
+        if not g:
+            g = 'dump.asm'
+        with open(g, 'w') as f:
+            ip = 0
+            while ip != self.mem.shape[0]:
+                try:
+                    oip = ip
+                    op = self.opstr[self.mem[ip]]
+                    opargs = self.opargs[self.mem[ip]]
+                    ip += 1
+                    args = []
+                    for i in range(opargs):
+                        args.append(self.mem[ip])
+                        ip += 1
+                    arghex = [f'{hex(x):6}' if x < 0x8000 and op != 'out' else f'R{x-0x8000}    ' if op != 'out' else chr(x).replace('\n','\\n') for x in args]
+                    hexstr = ' '.join(arghex)
+                    f.write(f'{hex(oip):6} {op:6} {hexstr}\n')
+                    if op == 'halt' or op == 'ret':
+                        f.write('\n')
+                except Exception as e:
+                    ip = oip
+                    # log.warning(e)
+                    if not stripped:
+                        f.write(f'{hex(ip):6} {hex(self.mem[ip])} ???\n')
+                    ip += 1
+
+            print(f'Assmebly dump at {g}.')
+
 
     def pin_mem(self, args):
         self.__pinmem = np.copy(self.mem)

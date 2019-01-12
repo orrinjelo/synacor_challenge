@@ -3,6 +3,7 @@ import os
 import io
 import sys
 import logging
+import logging.handlers
 
 from argparse import ArgumentParser
 from signal import signal, SIGINT
@@ -33,7 +34,7 @@ def sigint(vm):
     return _sigint
 
 def run(args):
-    vm = VirtualMachine(state_file=args.load)
+    vm = VirtualMachine(state_file=args.load, memsize=0x7600)
     signal(SIGINT, sigint(vm))
     vm.run(file=args.file)
     # print(vm.registers)
@@ -164,11 +165,11 @@ def main():
         filehandler.setLevel(LEVELS.get(args.log_verbose, logging.INFO))
         filehandler.setFormatter(color_formatter)
         log.addHandler(filehandler)
-        log.vomit(f'Writing to log file: {args.logfile}')
+        log.debug(f'Writing to log file: {args.logfile}')
         logging.basicConfig(
             filename=args.logfile,
             filemode='a',
-            level=LEVELS.get(args.log_verbose, logging.INFO),
+            level=5, #LEVELS.get(args.log_verbose, logging.INFO),
             format=logging_format
         )
 
